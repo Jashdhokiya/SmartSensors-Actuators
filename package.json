@@ -1,0 +1,21 @@
+{
+  "name": "smart-cargo-monitor-workspace",
+  "version": "2.0.0",
+  "description": "Smart In-Transit Cargo Monitoring System (Firmware + Backend + Dashboard)",
+  "scripts": {
+    "start:backend": "npm --prefix backend start",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "simulate": "npm --prefix backend run simulate",
+    "build:frontend": "npm --prefix frontend run build"
+  },
+  "keywords": [
+    "iot",
+    "esp32",
+    "cargo-monitor",
+    "telemetry",
+    "predictive-maintenance"
+  ],
+  "author": "",
+  "license": "ISC"
+}

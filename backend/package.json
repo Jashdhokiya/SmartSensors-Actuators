@@ -1,0 +1,29 @@
+{
+  "name": "smart-cargo-monitor-backend",
+  "version": "2.0.0",
+  "description": "Smart Cargo Monitor Cloud Ingestion & REST API Service (MQTT + PostgreSQL + REST)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "simulate": "node simulator/mqtt_simulator.js"
+  },
+  "keywords": [
+    "iot",
+    "esp32",
+    "mqtt",
+    "telemetry",
+    "cargo-tracking",
+    "rest-api",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mqtt": "^5.5.0",
+    "pg": "^8.11.5"
+  }
+}

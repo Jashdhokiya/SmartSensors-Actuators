@@ -1,0 +1,152 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   CSS Custom Properties — Design Tokens
+   ============================================================ */
+:root {
+  --color-safe: #16A34A;
+  --color-warning: #D97706;
+  --color-critical: #DC2626;
+  --color-info: #2563EB;
+  --color-offline: #9CA3AF;
+
+  --color-bg: #F8F9FA;
+  --color-surface: #FFFFFF;
+  --color-border: #E5E7EB;
+
+  --color-text-primary: #1A1D23;
+  --color-text-secondary: #6B7280;
+
+  --radius-card: 16px;
+  --radius-default: 12px;
+
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+  --shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.06);
+}
+
+/* ============================================================
+   Base Styles
+   ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  tab-size: 4;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   Scrollbar
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+/* ============================================================
+   Utility Layer
+   ============================================================ */
+@layer components {
+  .card {
+    @apply bg-white rounded-lg shadow-card border border-border;
+  }
+
+  .card-hover {
+    @apply hover:shadow-card-hover transition-shadow duration-200;
+  }
+
+  .sensor-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .status-safe {
+    @apply text-[#16A34A] bg-[#F0FDF4] border-[#BBF7D0];
+  }
+  .status-warning {
+    @apply text-[#D97706] bg-[#FFFBEB] border-[#FDE68A];
+  }
+  .status-critical {
+    @apply text-[#DC2626] bg-[#FEF2F2] border-[#FECACA];
+  }
+  .status-info {
+    @apply text-[#2563EB] bg-[#EFF6FF] border-[#BFDBFE];
+  }
+  .status-offline {
+    @apply text-[#9CA3AF] bg-[#F9FAFB] border-[#E5E7EB];
+  }
+}
+
+/* ============================================================
+   MapLibre GL overrides
+   ============================================================ */
+.maplibregl-map {
+  font-family: 'Inter', sans-serif !important;
+}
+.maplibregl-ctrl-group {
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-card) !important;
+  border: 1px solid var(--color-border) !important;
+}
+.maplibregl-ctrl-group button {
+  border-radius: inherit !important;
+}
+.maplibregl-popup-content {
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-hover) !important;
+  padding: 12px 16px !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* ============================================================
+   Animations
+   ============================================================ */
+@keyframes liveBlip {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.85); }
+}
+@keyframes ripple {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+@keyframes shimmer {
+  0%   { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+.live-dot {
+  animation: liveBlip 2s ease-in-out infinite;
+}
+.live-ripple {
+  animation: ripple 2s ease-out infinite;
+}
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite linear;
+}
