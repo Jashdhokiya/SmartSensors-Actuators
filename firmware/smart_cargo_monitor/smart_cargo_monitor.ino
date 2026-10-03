@@ -12,8 +12,10 @@
 #include "types.h"
 #include "mpu6050_sensor.h"
 #include "gps_tracker.h"
+#include "env_sensors.h"           // DHT11 Temp/Humidity & LDR Light/Tamper
 #include "predictive_engine.h"
 #include "telemetry_publisher.h"
+#include "classifier.h"            // TinyML shock/handling classifier (Phase 5)
 
 static CargoReading currentReading;
 static unsigned long lastSensorPoll = 0;
@@ -32,11 +34,17 @@ void setup() {
   // 2. Initialize Geolocation (NEO-6M GPS over UART2)
   initGPS();
 
-  // 3. Initialize Predictive Math Engine
+  // 3. Initialize Environmental Sensors (DHT11 & LDR)
+  initEnvSensors();
+
+  // 4. Initialize Predictive Math Engine
   initPredictiveEngine();
 
-  // 4. Initialize WiFi & Cloud MQTT Client
+  // 5. Initialize WiFi & Cloud MQTT Client
   initNetworking();
+
+  // 6. Initialize TinyML Cargo Classifier (ring-buffer + RF model)
+  initClassifier();
 
   Serial.println("=== Initialization complete. Telemetry streaming active. ===\n");
 }
@@ -48,6 +56,9 @@ void loop() {
   // Maintain WiFi & MQTT heartbeat
   maintainNetworkConnections();
 
+  // Feed classifier ring buffer at 125 Hz (non-blocking, rate-limited internally)
+  classifierFeedSample();
+
   // Periodic sensor sampling, evaluation, and telemetry publishing
   unsigned long now = millis();
   if (now - lastSensorPoll >= SENSOR_READ_INTERVAL_MS) {
@@ -56,6 +67,7 @@ void loop() {
     // A. Read Hardware Sensors
     readMotionSensor(currentReading);
     readGPSData(currentReading);
+    readEnvSensors(currentReading);
 
     // B. Reactive Alerts Evaluation
     currentReading.alertActive = false;
@@ -68,6 +80,18 @@ void loop() {
       currentReading.alertActive = true;
       currentReading.alertReason += "[EXCESSIVE TILT] ";
     }
+    if (currentReading.tempExceeded) {
+      currentReading.alertActive = true;
+      currentReading.alertReason += "[TEMP EXCEEDED] ";
+    }
+    if (currentReading.humidityExceeded) {
+      currentReading.alertActive = true;
+      currentReading.alertReason += "[HUMIDITY EXCEEDED] ";
+    }
+    if (currentReading.lightTamperAlert) {
+      currentReading.alertActive = true;
+      currentReading.alertReason += "[BOX OPEN / TAMPER ALERT] ";
+    }
 
     // C. Predictive Trend Fitting (Least-Squares Regression)
     updatePredictiveLayer(currentReading);
@@ -78,3 +102,4 @@ void loop() {
     publishTelemetry(currentReading);
   }
 }
+

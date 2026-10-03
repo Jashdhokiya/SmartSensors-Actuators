@@ -19,4 +19,7 @@ void readMotionSensor(CargoReading &reading);
 // Sensor presence status
 bool isMPUDetected();
 
+// Returns the I2C address currently in use (0x68 or 0x69)
+uint8_t getMPUAddress();
+
 #endif // MPU6050_SENSOR_H

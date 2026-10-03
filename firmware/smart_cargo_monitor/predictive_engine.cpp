@@ -102,17 +102,13 @@ void updatePredictiveLayer(const CargoReading &reading) {
   trendPushSample(shockExposureTrend, shockExposureAccumulator, now);
   trendFit(shockExposureTrend);
 
-  // Channel 2: Temperature (Wire SHT31 or DS18B20 here when connected)
-  // Example:
-  // float tempC = sht31.readTemperature();
-  // trendPushSample(tempTrend, tempC, now);
-  // trendFit(tempTrend);
+  // Channel 2: Temperature (DHT11)
+  trendPushSample(tempTrend, reading.temperature_c, now);
+  trendFit(tempTrend);
 
-  // Channel 3: Humidity (Wire SHT31 or DHT22 here when connected)
-  // Example:
-  // float humPct = sht31.readHumidity();
-  // trendPushSample(humidityTrend, humPct, now);
-  // trendFit(humidityTrend);
+  // Channel 3: Humidity (DHT11)
+  trendPushSample(humidityTrend, reading.humidity_pct, now);
+  trendFit(humidityTrend);
 
   // Channel 4: Battery Voltage (Wire INA219 or ADC divider here)
   // Example:

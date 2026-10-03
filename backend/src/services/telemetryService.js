@@ -3,6 +3,9 @@ const memoryStore = require('./store');
 
 const sseClients = new Set();
 
+// Track device online/offline status from LWT messages
+const deviceStatus = new Map();
+
 function addSSEClient(client) {
   sseClients.add(client);
 }
@@ -53,8 +56,11 @@ function normalizeTelemetry(payload) {
   const speed = gpsFix ? (gps.speed_kmph ?? payload.speed_kmph ?? 72) : 72;
   const alt = gpsFix ? (gps.altitude_m ?? payload.altitude_m ?? 240) : 240;
 
-  const tempVal = payload.temperature?.value ?? payload.temp_c ?? 4.2;
-  const humidityVal = payload.humidity?.value ?? payload.humidity_pct ?? 62;
+  const env = payload.environment || {};
+  const tempVal = env.temperature_c ?? payload.temperature?.value ?? payload.temp_c ?? 4.2;
+  const humidityVal = env.humidity_pct ?? payload.humidity?.value ?? payload.humidity_pct ?? 62;
+  const lightRaw = env.light_raw ?? payload.light_raw ?? 0;
+  const lightTamper = Boolean(env.light_tamper ?? payload.light_tamper);
   const batteryPct = payload.battery?.percentage ?? payload.battery_pct ?? 88;
   const batteryVolt = payload.battery?.voltage ?? payload.battery_v ?? 3.92;
 
@@ -159,7 +165,19 @@ function normalizeTelemetry(payload) {
     },
     alert_active: Boolean(payload.alert_active),
     alert_reason: payload.alert_reason || '',
-    predictions: predictions
+    predictions: predictions,
+
+    // ML Classification from firmware TinyML classifier (Phase 5)
+    classification: {
+      valid: Boolean(payload.classification?.valid),
+      label: payload.classification?.label || 'pending',
+      labelId: payload.classification?.label_id ?? -1,
+      confidence: payload.classification?.confidence ?? 0.0,
+      votes: payload.classification?.votes || [0, 0, 0, 0]
+    },
+
+    // Sequence number for gap detection
+    seq: payload.seq ?? null
   };
 
   return { deviceId, recordedAt, standardized, rawPayload: payload };
@@ -212,19 +230,42 @@ async function processIncomingTelemetry(payload) {
     dev.temperature = standardized.temperature.value;
   }
 
-  // 2. Alert Processing
-  if (standardized.alert_active || standardized.shock.status === 'critical' || standardized.temperature.status === 'critical') {
+  // 2. Alert Processing — combines raw thresholds AND ML classifier output
+  const isThresholdAlert = standardized.alert_active || standardized.shock.status === 'critical' || standardized.temperature.status === 'critical';
+
+  // ML-driven alert: classifier detected shock/drop/rough_handling with high confidence
+  const clf = standardized.classification;
+  const isMLAlert = clf.valid && clf.confidence >= 0.65 && ['shock', 'drop', 'rough_handling'].includes(clf.label);
+
+  if (isThresholdAlert || isMLAlert) {
     const alertId = `alert-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    // Determine alert type — prefer ML label if available
+    let alertType = 'general';
+    let alertTitle = standardized.alert_reason || 'Critical In-Transit Event Triggered';
+    let alertMessage = `Impact/Breach detected on unit ${deviceId}. Accel: ${standardized.shock.value}g, Temp: ${standardized.temperature.value}°C`;
+
+    if (isMLAlert) {
+      alertType = `ml_${clf.label}`;
+      alertTitle = `ML Classifier: ${clf.label.replace('_', ' ')} detected (${(clf.confidence * 100).toFixed(0)}% confidence)`;
+      alertMessage = `TinyML classifier on ${deviceId} detected '${clf.label}' event with ${(clf.confidence * 100).toFixed(0)}% confidence. Votes: Normal=${(clf.votes[0]*100).toFixed(0)}% Shock=${(clf.votes[1]*100).toFixed(0)}% Drop=${(clf.votes[2]*100).toFixed(0)}% Rough=${(clf.votes[3]*100).toFixed(0)}%`;
+    } else if (standardized.shock.status === 'critical') {
+      alertType = 'shock_event';
+    } else if (standardized.temperature.status === 'critical') {
+      alertType = 'temperature_excursion';
+    }
+
     const newAlert = {
       id: alertId,
       deviceId,
-      type: standardized.shock.status === 'critical' ? 'shock_event' : 'temperature_excursion',
+      type: alertType,
       severity: 'critical',
-      title: standardized.alert_reason || 'Critical In-Transit Event Triggered',
-      message: `Impact/Breach detected on unit ${deviceId}. Accel: ${standardized.shock.value}g, Temp: ${standardized.temperature.value}°C`,
+      title: alertTitle,
+      message: alertMessage,
       timestamp: standardized.lastUpdate,
       status: 'active',
       acknowledged: false,
+      classification: isMLAlert ? clf : undefined
     };
     memoryStore.alerts.unshift(newAlert);
     if (memoryStore.alerts.length > 200) memoryStore.alerts.pop();
@@ -321,13 +362,47 @@ async function processIncomingTelemetry(payload) {
     }
   }
 
-  console.log(`📡 [INGEST OK] Device: ${deviceId} | Temp: ${standardized.temperature.value}°C | Shock: ${standardized.shock.value}g | Speed: ${standardized.speed.value}km/h | Alert: ${standardized.alert_active}`);
+  console.log(`📡 [INGEST OK] Device: ${deviceId} | Temp: ${standardized.temperature.value}°C | Shock: ${standardized.shock.value}g | Speed: ${standardized.speed.value}km/h | Alert: ${standardized.alert_active} | ML: ${clf.label}(${(clf.confidence*100).toFixed(0)}%)`);
+}
+
+/**
+ * Process device status messages (online/offline from LWT).
+ * Updates in-memory device status and broadcasts to frontend.
+ */
+function processDeviceStatus(payload) {
+  const deviceId = payload.device_id || payload.deviceId || 'unknown';
+  const status = payload.status || 'unknown';
+  const timestamp = payload.timestamp || Date.now();
+
+  deviceStatus.set(deviceId, { status, timestamp });
+
+  // Update device record if exists
+  if (memoryStore.devices.has(deviceId)) {
+    const dev = memoryStore.devices.get(deviceId);
+    dev.connectionStatus = status;
+    dev.lastStatusChange = timestamp;
+    if (status === 'offline') {
+      dev.status = 'offline';
+    }
+  }
+
+  // Broadcast to frontend
+  broadcastToClients({
+    type: 'DEVICE_STATUS',
+    deviceId,
+    status,
+    timestamp
+  });
+
+  console.log(`${status === 'online' ? '🟢' : '🔴'} [DEVICE STATUS] ${deviceId}: ${status}`);
 }
 
 module.exports = {
   processIncomingTelemetry,
+  processDeviceStatus,
   normalizeTelemetry,
   broadcastToClients,
   addSSEClient,
-  removeSSEClient
+  removeSSEClient,
+  getDeviceStatus: () => deviceStatus
 };

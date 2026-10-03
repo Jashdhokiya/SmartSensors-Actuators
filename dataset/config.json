@@ -1,0 +1,42 @@
+{
+  "seed": 42,
+  "n_runs_per_class": 125,
+  "fs_hz": 125,
+  "window_samples": 125,
+  "window_step": 63,
+  "classes": [
+    "normal",
+    "shock",
+    "drop",
+    "rough_handling"
+  ],
+  "counts": {
+    "train": {
+      "total": 8630,
+      "by_class": {
+        "0": 2078,
+        "1": 2280,
+        "2": 2136,
+        "3": 2136
+      }
+    },
+    "val": {
+      "total": 1926,
+      "by_class": {
+        "0": 404,
+        "1": 426,
+        "2": 526,
+        "3": 570
+      }
+    },
+    "test": {
+      "total": 1916,
+      "by_class": {
+        "0": 596,
+        "1": 384,
+        "2": 446,
+        "3": 490
+      }
+    }
+  }
+}

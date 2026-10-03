@@ -30,6 +30,14 @@ struct CargoReading {
   float  hdop;
   String timestamp;
 
+  // Environmental Data (DHT11 & LDR)
+  float  temperature_c;
+  float  humidity_pct;
+  int    lightRaw;
+  bool   tempExceeded;
+  bool   humidityExceeded;
+  bool   lightTamperAlert;
+
   // Alert State
   bool   alertActive;
   String alertReason;

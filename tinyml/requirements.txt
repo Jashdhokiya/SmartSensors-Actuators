@@ -1,0 +1,18 @@
+# requirements.txt — TinyML pipeline for Smart Cargo Monitor
+# Pinned for reproducibility. Python 3.10+ required.
+#
+# Install: pip install -r tinyml/requirements.txt
+
+numpy==1.26.4
+scikit-learn==1.4.2
+matplotlib==3.9.0
+joblib==1.4.2
+
+# Optional — needed only for MLP/CNN training (Phase 3 --skip_cnn/--skip_mlp flags bypass it)
+tensorflow==2.16.1
+
+# Optional — lighter alternative to TensorFlow for inference-only validation
+# tflite-runtime==2.14.0
+
+# Optional — serial port reading for Phase 6 real data collection
+pyserial==3.5

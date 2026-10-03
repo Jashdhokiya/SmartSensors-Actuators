@@ -1,9 +1,11 @@
 #include "telemetry_publisher.h"
 #include "mpu6050_sensor.h"
 #include "gps_tracker.h"
+#include "classifier.h"            // TinyML classifier result
 
 static WiFiClient espClient;
 static PubSubClient mqttClient(espClient);
+static uint32_t s_sequence_num = 0;  // Monotonic message counter for gap detection
 
 void initNetworking() {
   if (String(DEFAULT_WIFI_SSID) == "YOUR_WIFI_SSID") {
@@ -27,7 +29,7 @@ void initNetworking() {
   }
 
   mqttClient.setServer(DEFAULT_MQTT_SERVER, DEFAULT_MQTT_PORT);
-  mqttClient.setBufferSize(1024);
+  mqttClient.setBufferSize(1536);  // Increased from 1024 to prevent truncation with classification payload
 }
 
 void maintainNetworkConnections() {
@@ -38,8 +40,29 @@ void maintainNetworkConnections() {
     if (millis() - lastAttempt > 5000) {
       lastAttempt = millis();
       Serial.printf("[MQTT] Connecting to broker %s:%d...\n", DEFAULT_MQTT_SERVER, DEFAULT_MQTT_PORT);
-      if (mqttClient.connect(DEFAULT_MQTT_CLIENT_ID)) {
+
+      // Connect with auth + LWT for offline detection
+      bool connected = false;
+      const char* user = (strlen(MQTT_USERNAME) > 0) ? MQTT_USERNAME : nullptr;
+      const char* pass = (strlen(MQTT_PASSWORD) > 0) ? MQTT_PASSWORD : nullptr;
+      if (user) {
+        connected = mqttClient.connect(
+          DEFAULT_MQTT_CLIENT_ID, user, pass,
+          MQTT_LWT_TOPIC, MQTT_LWT_QOS, MQTT_LWT_RETAIN, MQTT_LWT_MESSAGE
+        );
+      } else {
+        connected = mqttClient.connect(
+          DEFAULT_MQTT_CLIENT_ID,
+          nullptr, nullptr,
+          MQTT_LWT_TOPIC, MQTT_LWT_QOS, MQTT_LWT_RETAIN, MQTT_LWT_MESSAGE
+        );
+      }
+
+      if (connected) {
         Serial.println("[MQTT] Connected to cloud broker successfully!");
+        // Publish online status (retained) so backend knows device is alive
+        String onlineMsg = String("{\"device_id\":\"") + DEVICE_ID + String("\",\"status\":\"online\"}");
+        mqttClient.publish(MQTT_LWT_TOPIC, onlineMsg.c_str(), true);  // retained
       } else {
         Serial.printf("[MQTT] Connection failed (rc=%d). Retrying in 5s...\n", mqttClient.state());
       }
@@ -50,10 +73,11 @@ void maintainNetworkConnections() {
 }
 
 String buildJSONPayload(const CargoReading &reading) {
-  StaticJsonDocument<896> doc;
+  StaticJsonDocument<1536> doc;
 
   doc["device_id"] = DEVICE_ID;
   doc["timestamp_ms"] = millis();
+  doc["seq"] = s_sequence_num++;  // Monotonic sequence for gap detection
 
   JsonObject motion = doc.createNestedObject("motion");
   motion["accel_x_g"] = reading.accelX_g;
@@ -72,6 +96,14 @@ String buildJSONPayload(const CargoReading &reading) {
   location["altitude_m"] = reading.altitudeMeters;
   location["satellites"] = reading.satellites;
   location["timestamp_utc"] = reading.timestamp;
+
+  JsonObject environment = doc.createNestedObject("environment");
+  environment["temperature_c"] = reading.temperature_c;
+  environment["humidity_pct"] = reading.humidity_pct;
+  environment["light_raw"] = reading.lightRaw;
+  environment["light_tamper"] = reading.lightTamperAlert;
+  environment["temp_exceeded"] = reading.tempExceeded;
+  environment["humidity_exceeded"] = reading.humidityExceeded;
 
   doc["alert_active"] = reading.alertActive;
   doc["alert_reason"] = reading.alertReason;
@@ -110,6 +142,22 @@ String buildJSONPayload(const CargoReading &reading) {
   batPred["seconds_to_empty"] = batTrend.trendValid
       ? trendSecondsToBreach(batTrend, BATTERY_SAFE_MIN_V, -1) : -1;
 
+  // TinyML Classifier Output (Phase 5)
+  // Edge-threshold alerts above fire independently regardless of this block.
+  const ClassifierResult& clf = getClassifierResult();
+  JsonObject classification = doc.createNestedObject("classification");
+  classification["valid"]      = clf.valid;
+  classification["label"]      = clf.valid ? classifierLabelStr(clf.label) : "pending";
+  classification["label_id"]   = clf.valid ? (int)clf.label : -1;
+  classification["confidence"] = clf.valid ? clf.confidence : 0.0f;
+  JsonArray clf_votes = classification.createNestedArray("votes");
+  if (clf.valid) {
+    clf_votes.add(clf.votes[0]);  // normal
+    clf_votes.add(clf.votes[1]);  // shock
+    clf_votes.add(clf.votes[2]);  // drop
+    clf_votes.add(clf.votes[3]);  // rough_handling
+  }
+
   String output;
   serializeJson(doc, output);
   return output;
@@ -118,7 +166,7 @@ String buildJSONPayload(const CargoReading &reading) {
 bool publishTelemetry(const CargoReading &reading) {
   if (mqttClient.connected()) {
     String payload = buildJSONPayload(reading);
-    boolean ok = mqttClient.publish(DEFAULT_MQTT_TOPIC, payload.c_str());
+    boolean ok = mqttClient.publish(DEFAULT_MQTT_TOPIC, payload.c_str(), MQTT_TELEMETRY_QOS);
     if (ok) {
       Serial.printf("[MQTT PUB OK] Sent %u bytes to '%s'\n", payload.length(), DEFAULT_MQTT_TOPIC);
       return true;
@@ -160,6 +208,14 @@ void printReadingToSerial(const CargoReading &reading) {
       Serial.println("       -> Place antenna near window or outdoors (takes ~1-3 mins for initial fix).");
     }
   }
+
+  Serial.printf("Env    | Temp: %0.1f°C %s | Hum: %0.1f%% %s | Light: %d ADC %s\n",
+                 reading.temperature_c,
+                 reading.tempExceeded ? ">>> [TEMP EXCEEDED!] <<<" : "",
+                 reading.humidity_pct,
+                 reading.humidityExceeded ? ">>> [HUMIDITY EXCEEDED!] <<<" : "",
+                 reading.lightRaw,
+                 reading.lightTamperAlert ? ">>> [BOX OPEN/TAMPER DETECTED!] <<<" : "");
 
   if (reading.alertActive) {
     Serial.printf("Status | *** CRITICAL ALERT: %s ***\n", reading.alertReason.c_str());

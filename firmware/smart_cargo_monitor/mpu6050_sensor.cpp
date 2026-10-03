@@ -141,3 +141,7 @@ void readMotionSensor(CargoReading &reading) {
 bool isMPUDetected() {
   return mpuDetected;
 }
+
+uint8_t getMPUAddress() {
+  return mpuAddress;
+}
